@@ -1,4 +1,4 @@
-streamlit==1.25.0
+streamlit==1.33.0  # or just streamlit (latest)
 pandas==1.5.3
 pandasai==1.5.11
 openai==1.30.1
