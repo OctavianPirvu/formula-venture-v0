@@ -3,7 +3,6 @@
 import streamlit as st
 import pandas as pd
 import os
-from openai import OpenAI
 
 # Import your other two modules
 import analyzer
@@ -27,15 +26,14 @@ page = st.sidebar.radio(
 
 # ─── 3) Route your pages ───────────────────────────────────────────────────────
 if page == "🏠 Home":
+    # ————————— Home Page Header —————————
     st.markdown(
         "<h1 style='text-align: center;'>🏁 Welcome to Formula Venture Dashboard</h1>",
         unsafe_allow_html=True,
     )
     st.write("Use the sidebar to navigate between modules.")
 
-    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
-    st.write("🔑 OpenAI key loaded:", bool(os.environ.get("OPENAI_API_KEY")))
-
+    # ───────────── 3.1) Load & Merge Unicorn Data ──────────────────────────────
     SHEET_URL = (
         "https://docs.google.com/spreadsheets/d/e/"
         "2PACX-1vQZDRRKispN6WmiiOKW0G1TBVt21_I-6QbO-rSbiCJrT-rU_UnVohI87LzzTDSPfdUcomDVcb61mJhb/"
@@ -68,6 +66,7 @@ if page == "🏠 Home":
     df_full = pd.merge(df, df_extra, on="Company", how="left")
     st.write("ℹ️ df_full shape:", df_full.shape)
 
+    # ───────────── 3.2) Formatting helpers ──────────────────────────────────────
     def format_billions(val):
         if pd.isnull(val):
             return "—"
@@ -78,39 +77,10 @@ if page == "🏠 Home":
             return "—"
         return f"{val:.2f}x"
 
-    def ask_openai_about_df(query: str, df: pd.DataFrame) -> str:
-        df_sample = df.head(10).to_csv(index=False)
-        prompt = f"""
-You are a data analyst. The user is working with the following dataset (first 10 rows shown):
-
-{df_sample}
-
-Now, respond to this question using insights that would apply across the whole dataset:
-"{query}"
-"""
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.2,
-        )
-        return response.choices[0].message.content.strip()
-
-    st.header("💬 Ask Questions About Unicorns")
-    query = st.text_input("Ask your unicorn question (e.g. 'Show me Series B unicorns')")
-
-    if query:
-        with st.spinner("Thinking..."):
-            try:
-                response_text = ask_openai_about_df(query, df_full)
-                st.subheader("📄 Answer:")
-                st.write(response_text)
-            except Exception as e:
-                st.error(f"Error during chat call: {e}")
-
-    st.markdown("---")
-
+    # ───────────── 3.3) Unicorn Tracker & Analyzer UI ──────────────────────────
     st.title("🦄 Unicorns Tracker & Analyzer")
 
+    # --- Quarter Selection ---
     quarters = sorted(
         df_full["Quarter"].unique(),
         key=lambda x: (int(x.split()[1]), int(x.split()[0][1:])),
@@ -118,11 +88,13 @@ Now, respond to this question using insights that would apply across the whole d
     quarter = st.selectbox("Select Quarter", quarters, index=len(quarters) - 1)
     filtered = df_full[df_full["Quarter"] == quarter]
 
+    # --- Summary Metrics ---
     st.header(f"Unicorns for {quarter}")
     col1, col2 = st.columns(2)
     col1.metric("Total Unicorns", len(filtered))
     col2.metric("Total Valuation", format_billions(filtered["Post Money Value"].sum()))
 
+    # --- Main Unicorn Table (Expanded Columns) ---
     main_table = filtered[[
         "Company", "Post Money Value", "Total Funding Amount", "Last Equity Funding Type",
         "Top 5 Investors", "Industries", "Country", "Continent",
@@ -141,6 +113,7 @@ Now, respond to this question using insights that would apply across the whole d
 
     st.dataframe(main_table, height=400, width=1000)
 
+    # --- Valuation Trend Chart ---
     st.header("Valuation Trend for a Unicorn (Q4 2024 → Q2 2025)")
     companies = sorted(df_full["Company"].drop_duplicates())
     company_choice = st.selectbox("Select Company", companies)
@@ -158,6 +131,7 @@ Now, respond to this question using insights that would apply across the whole d
         chart_data = trend_df.set_index("Quarter")["Post Money Value"]
         st.line_chart(chart_data)
 
+    # --- Risers & Fallers Between Quarters ---
     st.header("All Movers Between Quarters")
     q1, q2 = st.columns(2)
     quarter1 = q1.selectbox("Compare From", quarters, index=max(0, len(quarters) - 2), key="q1")
