@@ -39,8 +39,10 @@ if page == "🏠 Home":
 
     # ───────────── 3.1) pandas-AI Chatbot Setup ─────────────────────────────────
     # (Make sure you have your OpenAI key in .streamlit/secrets.toml as openai_api_key)
-    llm = OpenAI(api_token=st.secrets["openai_api_key"])
-    st.write("🔑 OpenAI key loaded:", bool(st.secrets["openai_api_key"]))
+    import os
+    llm = OpenAI(api_token=os.environ.get("OPENAI_API_KEY"))
+
+    st.write("🔑 OpenAI key loaded:", bool(os.environ.get("OPENAI_API_KEY")))
 
     # We'll build df_full below; initialize sdf to None for now
     sdf = None
