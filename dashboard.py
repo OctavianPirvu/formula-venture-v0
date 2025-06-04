@@ -23,6 +23,32 @@ st.sidebar.image("Formula Venture Logo.png", use_container_width=True)
 
 st.sidebar.title("📂 Formula Venture Dashboard")
 
+# Function definitions
+
+def load_data(url):
+    df = pd.read_csv(url)
+    df["Post Money Value"] = pd.to_numeric(df["Post Money Value"], errors="coerce")
+    df["Total Equity Funding"] = pd.to_numeric(df["Total Equity Funding"], errors="coerce")
+    df["Quarter"] = df["Quarter"].astype(str)
+    df["Company"] = df["Company"].astype(str)
+    return df
+
+def load_additional_data(url):
+    df_extra = pd.read_csv(url)
+    df_extra.rename(columns={"Organization Name": "Company"}, inplace=True)
+    df_extra["Company"] = df_extra["Company"].astype(str)
+    return df_extra
+
+def format_billions(val):
+    if pd.isnull(val):
+        return "—"
+    return f"${val:.1f}B"
+
+def format_multiple(val):
+    if pd.isnull(val) or val == float("inf") or val == 0:
+        return "—"
+    return f"{val:.2f}x"
+
 page = st.sidebar.radio(
     "Go to",
     ["🏠 Home", "🦄 Unicorn Analyzer", "📊 Fund Model Simulator"],
@@ -39,7 +65,9 @@ if page == "🏠 Home":
 
     # ───────────── 3.1) pandas-AI Chatbot Setup ─────────────────────────────────
     # (Make sure you have your OpenAI key in .streamlit/secrets.toml as openai_api_key)
-    llm = OpenAI(api_token=st.secrets["openai_api_key"])
+    import os
+    llm = OpenAI(api_token=os.getenv("OPENAI_API_KEY"))
+
     st.write("🔑 OpenAI key loaded:", bool(st.secrets["openai_api_key"]))
 
     # We'll build df_full below; initialize sdf to None for now
@@ -57,9 +85,6 @@ if page == "🏠 Home":
         "pub?gid=1650893883&single=true&output=csv"
     )
 
-    @st.cache_data
-    def load_data(url):
-        df = pd.read_csv(url)
         df["Post Money Value"] = pd.to_numeric(df["Post Money Value"], errors="coerce")
         df["Total Equity Funding"] = pd.to_numeric(df["Total Equity Funding"], errors="coerce")
         df["Quarter"] = df["Quarter"].astype(str)
