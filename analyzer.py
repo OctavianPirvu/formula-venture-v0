@@ -24,19 +24,18 @@ def run():
     if uploaded_file_unicorns is not None:
         @st.cache_data
         def load_static_csv():
+            base_path = os.path.dirname(__file__)
             df_unicorns = pd.read_csv(
-                "/Users/octavianpievu/Desktop/python/Dashboard/data/June 25 - All Unicorns.csv",
-                on_bad_lines="skip",
+                os.path.join(base_path, "data-clean", "master_unicorns.csv"), on_bad_lines="skip"
             )
             df_emerging = pd.read_csv(
-                "/Users/octavianpievu/Desktop/python/Dashboard/data/Emerging_Unicorn_List-June_3rd_2025.csv",
-                on_bad_lines="skip",
+                os.path.join(base_path, "data-clean", "emerging_unicorns.csv"), on_bad_lines="skip"
             )
 
             df_unicorns.columns = df_unicorns.columns.str.lower().str.strip()
             df_emerging.columns = df_emerging.columns.str.lower().str.strip()
             return df_unicorns, df_emerging
-
+        
         # ✅ Load the static unicorn datasets
         df_unicorns, df_emerging = load_static_csv()
 
