@@ -2,15 +2,12 @@
 
 import streamlit as st
 import pandas as pd
+import os
+from openai import OpenAI
 
 # Import your other two modules
 import analyzer
 import fund_model
-
-# pandas-AI imports
-from pandasai import SmartDataframe
-from pandasai.llm.openai import OpenAI
-
 
 # ─── 1) st.set_page_config must come first ─────────────────────────────────────
 st.set_page_config(
@@ -30,24 +27,15 @@ page = st.sidebar.radio(
 
 # ─── 3) Route your pages ───────────────────────────────────────────────────────
 if page == "🏠 Home":
-    # ————————— Home Page Header —————————
     st.markdown(
         "<h1 style='text-align: center;'>🏁 Welcome to Formula Venture Dashboard</h1>",
         unsafe_allow_html=True,
     )
     st.write("Use the sidebar to navigate between modules.")
 
-    # ───────────── 3.1) pandas-AI Chatbot Setup ─────────────────────────────────
-    # (Make sure you have your OpenAI key in .streamlit/secrets.toml as openai_api_key)
-    import os
-    llm = OpenAI(api_token=os.environ.get("OPENAI_API_KEY"))
-
+    client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     st.write("🔑 OpenAI key loaded:", bool(os.environ.get("OPENAI_API_KEY")))
 
-    # We'll build df_full below; initialize sdf to None for now
-    sdf = None
-
-    # ───────────── 3.2) Load & Merge Unicorn Data ────────────────────────────────
     SHEET_URL = (
         "https://docs.google.com/spreadsheets/d/e/"
         "2PACX-1vQZDRRKispN6WmiiOKW0G1TBVt21_I-6QbO-rSbiCJrT-rU_UnVohI87LzzTDSPfdUcomDVcb61mJhb/"
@@ -75,13 +63,11 @@ if page == "🏠 Home":
         df_extra["Company"] = df_extra["Company"].astype(str)
         return df_extra
 
-    # Load and merge
     df = load_data(SHEET_URL)
     df_extra = load_additional_data(ADDITIONAL_SHEET_URL)
     df_full = pd.merge(df, df_extra, on="Company", how="left")
     st.write("ℹ️ df_full shape:", df_full.shape)
 
-    # Formatting helpers
     def format_billions(val):
         if pd.isnull(val):
             return "—"
@@ -92,51 +78,39 @@ if page == "🏠 Home":
             return "—"
         return f"{val:.2f}x"
 
-    # ───────────── 3.3) Build pandas-AI SmartDataframe ───────────────────────────
-    sdf = SmartDataframe(
-        df_full,
-        config={
-            "llm": llm,
-            "enable_cache": False,  # turn off duckdb caching
-            "cache": None,          # no shared lock file
-            "custom_print": st.write,
-            "verbose": True,        # show detailed logs in the app
-        },
-    )
+    def ask_openai_about_df(query: str, df: pd.DataFrame) -> str:
+        df_sample = df.head(10).to_csv(index=False)
+        prompt = f"""
+You are a data analyst. The user is working with the following dataset (first 10 rows shown):
 
-    # ───────────── 3.4) Chat Interface ───────────────────────────────────────────
+{df_sample}
+
+Now, respond to this question using insights that would apply across the whole dataset:
+"{query}"
+"""
+        response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.2,
+        )
+        return response.choices[0].message.content.strip()
+
     st.header("💬 Ask Questions About Unicorns")
     query = st.text_input("Ask your unicorn question (e.g. 'Show me Series B unicorns')")
 
     if query:
         with st.spinner("Thinking..."):
             try:
-                # Capture the result that pandas-AI returns
-                response = sdf.chat(query)
-
-                # 1) Show the raw “response” object
-                st.write("🔍 Raw response object:", response)
-
-                # 2) If it’s a string, explicitly print it under a subheader
-                if isinstance(response, str):
-                    st.subheader("📄 Text Answer:")
-                    st.write(response)
-
-                # 3) If it’s a DataFrame, show it under a subheader
-                elif isinstance(response, pd.DataFrame):
-                    st.subheader("📊 DataFrame Answer:")
-                    st.dataframe(response)
-
-                # 4) If it’s a plot, pandas-AI’s custom_print=st.write should have already rendered it
+                response_text = ask_openai_about_df(query, df_full)
+                st.subheader("📄 Answer:")
+                st.write(response_text)
             except Exception as e:
                 st.error(f"Error during chat call: {e}")
 
     st.markdown("---")
 
-    # ───────────── 3.5) Unicorn Tracker & Analyzer UI ────────────────────────────
     st.title("🦄 Unicorns Tracker & Analyzer")
 
-    # --- Quarter Selection ---
     quarters = sorted(
         df_full["Quarter"].unique(),
         key=lambda x: (int(x.split()[1]), int(x.split()[0][1:])),
@@ -144,30 +118,17 @@ if page == "🏠 Home":
     quarter = st.selectbox("Select Quarter", quarters, index=len(quarters) - 1)
     filtered = df_full[df_full["Quarter"] == quarter]
 
-    # --- Summary Metrics ---
     st.header(f"Unicorns for {quarter}")
     col1, col2 = st.columns(2)
     col1.metric("Total Unicorns", len(filtered))
     col2.metric("Total Valuation", format_billions(filtered["Post Money Value"].sum()))
 
-    # --- Main Unicorn Table (Expanded Columns) ---
-    main_table = filtered[
-        [
-            "Company",
-            "Post Money Value",
-            "Total Funding Amount",
-            "Last Equity Funding Type",
-            "Top 5 Investors",
-            "Industries",
-            "Country",
-            "Continent",
-            "Headquarters Location",
-            "Number of Employees",
-            "Funding Status",
-            "Number of Funding Rounds",
-            "Monthly Visits",
-        ]
-    ].copy()
+    main_table = filtered[[
+        "Company", "Post Money Value", "Total Funding Amount", "Last Equity Funding Type",
+        "Top 5 Investors", "Industries", "Country", "Continent",
+        "Headquarters Location", "Number of Employees", "Funding Status",
+        "Number of Funding Rounds", "Monthly Visits"
+    ]].copy()
 
     main_table = main_table.sort_values("Post Money Value", ascending=False)
     main_table["Post Money Value"] = main_table["Post Money Value"].apply(format_billions)
@@ -175,14 +136,11 @@ if page == "🏠 Home":
         lambda x: format_billions(x / 1e9) if pd.notnull(x) else "—"
     )
     main_table["Monthly Visits"] = main_table["Monthly Visits"].apply(
-        lambda x: f"{int(str(x).replace(',', '')):,}"
-        if pd.notnull(x) and str(x).replace(",", "").isdigit()
-        else "—"
+        lambda x: f"{int(str(x).replace(',', '')):,}" if pd.notnull(x) and str(x).replace(",", "").isdigit() else "—"
     )
 
     st.dataframe(main_table, height=400, width=1000)
 
-    # --- Valuation Trend Chart ---
     st.header("Valuation Trend for a Unicorn (Q4 2024 → Q2 2025)")
     companies = sorted(df_full["Company"].drop_duplicates())
     company_choice = st.selectbox("Select Company", companies)
@@ -191,9 +149,7 @@ if page == "🏠 Home":
     trend_df = df_full[
         (df_full["Company"] == company_choice) & (df_full["Quarter"].isin(desired_quarters))
     ].copy()
-    trend_df["Quarter"] = pd.Categorical(
-        trend_df["Quarter"], categories=desired_quarters, ordered=True
-    )
+    trend_df["Quarter"] = pd.Categorical(trend_df["Quarter"], categories=desired_quarters, ordered=True)
     trend_df = trend_df.sort_values("Quarter")
 
     if trend_df.empty:
@@ -202,24 +158,13 @@ if page == "🏠 Home":
         chart_data = trend_df.set_index("Quarter")["Post Money Value"]
         st.line_chart(chart_data)
 
-    # --- Risers & Fallers Between Quarters ---
     st.header("All Movers Between Quarters")
     q1, q2 = st.columns(2)
-    quarter1 = q1.selectbox(
-        "Compare From", quarters, index=max(0, len(quarters) - 2), key="q1"
-    )
-    quarter2 = q2.selectbox(
-        "Compare To", quarters, index=len(quarters) - 1, key="q2"
-    )
+    quarter1 = q1.selectbox("Compare From", quarters, index=max(0, len(quarters) - 2), key="q1")
+    quarter2 = q2.selectbox("Compare To", quarters, index=len(quarters) - 1, key="q2")
 
-    from_df = (
-        df_full[df_full["Quarter"] == quarter1][["Company", "Post Money Value"]]
-        .rename(columns={"Post Money Value": "Value_From"})
-    )
-    to_df = (
-        df_full[df_full["Quarter"] == quarter2][["Company", "Post Money Value"]]
-        .rename(columns={"Post Money Value": "Value_To"})
-    )
+    from_df = df_full[df_full["Quarter"] == quarter1][["Company", "Post Money Value"]].rename(columns={"Post Money Value": "Value_From"})
+    to_df = df_full[df_full["Quarter"] == quarter2][["Company", "Post Money Value"]].rename(columns={"Post Money Value": "Value_To"})
     comp = pd.merge(from_df, to_df, on="Company", how="outer")
     comp["Change_$B"] = comp["Value_To"] - comp["Value_From"]
     comp["Multiple"] = comp["Value_To"] / comp["Value_From"]
@@ -233,13 +178,10 @@ if page == "🏠 Home":
         group["Change_$B_fmt"] = group["Change_$B"].apply(format_billions)
         group["Multiple_fmt"] = group["Multiple"].apply(format_multiple)
 
-    # Display RISERS
     if not risers.empty:
         st.subheader(f"All Risers ({quarter1} → {quarter2})")
         st.dataframe(
-            risers[
-                ["Company", "Value_From_fmt", "Value_To_fmt", "Change_$B_fmt", "Multiple_fmt"]
-            ].rename(
+            risers[["Company", "Value_From_fmt", "Value_To_fmt", "Change_$B_fmt", "Multiple_fmt"]].rename(
                 columns={
                     "Value_From_fmt": f"Valuation {quarter1}",
                     "Value_To_fmt": f"Valuation {quarter2}",
@@ -253,13 +195,10 @@ if page == "🏠 Home":
     else:
         st.info("No risers between selected quarters.")
 
-    # Display FALLERS
     if not fallers.empty:
         st.subheader(f"All Fallers ({quarter1} → {quarter2})")
         st.dataframe(
-            fallers[
-                ["Company", "Value_From_fmt", "Value_To_fmt", "Change_$B_fmt", "Multiple_fmt"]
-            ].rename(
+            fallers[["Company", "Value_From_fmt", "Value_To_fmt", "Change_$B_fmt", "Multiple_fmt"]].rename(
                 columns={
                     "Value_From_fmt": f"Valuation {quarter1}",
                     "Value_To_fmt": f"Valuation {quarter2}",
@@ -275,6 +214,5 @@ if page == "🏠 Home":
 
 elif page == "🦄 Unicorn Analyzer":
     analyzer.run()
-
 elif page == "📊 Fund Model Simulator":
     fund_model.run()
