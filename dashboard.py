@@ -20,8 +20,7 @@ st.set_page_config(
 
 # ─── 2) Sidebar + Navigation ─────────────────────────────────────────────────
 st.sidebar.image(
-    "/Users/octavianpievu/Desktop/python/Dashboard/Formula Venture Logo.png",
-    use_container_width=True,
+    "/Users/octavianpievu/Desktop/python/Dashboard/Formula Venture Logo.png"
 )
 st.sidebar.title("📂 Formula Venture Dashboard")
 
